@@ -9,11 +9,9 @@ from typing import Dict, Tuple, List
 
 class Parser:
     def __init__(self) -> None:
-        WINDOW_SIZE = '1920,1080'
-
         chrome_options = Options()
         chrome_options.add_argument('--headless')
-        chrome_options.add_argument(f'--window-size={WINDOW_SIZE}')
+        chrome_options.add_argument(f'--window-size=1920, 1080')
 
         self.driver = webdriver.Chrome(
             service=Service(ChromeDriverManager().install()),
@@ -62,9 +60,8 @@ class Parser:
         )
         sum = 0
         for element in elements[1:]:
-            if element.text == '-':
-                element = 0
-            sum += int(element.text)
+            if element.text != '-':
+                sum += float(element.text)
         return sum
 
     def get_info(self, urls: List) -> List[str,]:
@@ -72,7 +69,7 @@ class Parser:
 
         print('--- parsing summary page')
         self.driver.get(urls[0])
-        result.append(int(self.driver.find_element(
+        result.append(float(self.driver.find_element(
             by=By.XPATH,
             value='//*[@id="__next"]/div[2]/div/div/div[2]/main/div/div[1]/div[2]/ul/li[1]/div[2]'
         ).text.replace(',', '')))
