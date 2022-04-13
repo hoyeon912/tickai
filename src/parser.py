@@ -1,135 +1,93 @@
-from pandas import DataFrame
 from selenium import webdriver
 from selenium.webdriver.chrome.options import Options
 from selenium.webdriver.chrome.service import Service
 from selenium.webdriver.common.by import By
+from selenium.webdriver.support import expected_conditions as EC
+from selenium.webdriver.support.ui import WebDriverWait
 from webdriver_manager.chrome import ChromeDriverManager
-import time
-from typing import Dict, Tuple, List
+from typing import Dict, List
+import pandas as pd
+from tqdm import tqdm
 
 class Parser:
     def __init__(self) -> None:
+        # Setting Webdriver option
         chrome_options = Options()
         chrome_options.add_argument('--headless')
         chrome_options.add_argument(f'--window-size=1920, 1080')
-
+        # Load Chrome driver
         self.driver = webdriver.Chrome(
             service=Service(ChromeDriverManager().install()),
             options=chrome_options
             )
-        self.driver.implicitly_wait(3)
+        self.driver.implicitly_wait(10)
         self.driver.get('https://www.investing.com/equities/united-states')
 
     def get_tickers(self) -> Dict:
-        print('Get Ticker List from investing.com')
+        # Change ticker list to S&P 500 from Dow Jones
         button = self.driver.find_element(
             by=By.XPATH, 
-            value='//*[@id="all"]'
+            value='//*[@id="166"]'
             )
         button.click()
-        time.sleep(10)
-
-        stock_list = self.driver.find_elements(
-            by=By.CLASS_NAME, 
-            value='plusIconTd'
-        )
-
-        filtered_dict = {}
-        for stock in stock_list:
+        # Pasring ticker list
+        stock_list = WebDriverWait(self.driver, 30).until(EC.presence_of_all_elements_located((By.CLASS_NAME, 'plusIconTd')))
+        tickers = []
+        for stock in tqdm(stock_list):
             info = stock.find_element(
                 by=By.TAG_NAME, 
                 value='a'
             )
-            filtered_dict[info.text] = info.get_attribute('href')
-        return filtered_dict
+            tickers.append([info.text, info.get_attribute('href')])
+        return tickers
 
-    def get_url(self, stock_url: str) -> Tuple[str,]:
-        income = f'{stock_url}-income-statement'
-        balance = f'{stock_url}-balance-sheet'
-        cash = f'{stock_url}-cash-flow'
-        return stock_url, income, balance, cash
-
-    def get_item(self, xpath: str) -> int:
-        row = self.driver.find_element(
-            by=By.XPATH,
-            value=xpath
-        )
-        elements = row.find_elements(
+    def get_fundamental(self, url:str) -> List:
+        fundamental = []
+        # Overview Page
+        self.driver.get(url)
+        dl = WebDriverWait(self.driver, 30).until(EC.presence_of_element_located((By.TAG_NAME, 'dl')))
+        dds = dl.find_elements(
             by=By.TAG_NAME,
-            value='td'
+            value='dd'
         )
-        sum = 0
-        for element in elements[1:]:
-            if element.text != '-':
-                sum += float(element.text)
-        return sum
+        low, high = dds[4].text.split('-')
+        fundamental.append(float(low)) # 52wk lowest price
+        fundamental.append(float(high)) # 52wk highest price
+        fundamental.append(int(dds[13].text.replace(',', ''))) # Outstanding
+        # Financial Summary Page
+        self.driver.get(url+'-financial-summary')
+        return fundamental
 
-    def get_info(self, urls: List) -> List[str,]:
-        result = []
-
-        print('--- parsing summary page')
-        self.driver.get(urls[0])
-        result.append(float(self.driver.find_element(
-            by=By.XPATH,
-            value='//*[@id="__next"]/div[2]/div/div/div[2]/main/div/div[1]/div[2]/ul/li[1]/div[2]'
-        ).text.replace(',', '')))
-        low, _, high = self.driver.find_element(
-            by=By.XPATH,
-            value='//*[@id="__next"]/div[2]/div/div/div[2]/main/div/div[1]/div[2]/ul/li[3]/div[2]'
-        ).text.replace(',', '').split(' ')
-        result.append(float(low))
-        result.append(float(high))
-
-        print('--- parsing income page')
-        self.driver.get(urls[1])
-        result.append(self.get_item('/html/body/div[5]/section/div[9]/table/tbody[2]/tr[1]'))
-        result.append(self.get_item('/html/body/div[5]/section/div[9]/table/tbody[2]/tr[3]'))
-        result.append(self.get_item('/html/body/div[5]/section/div[9]/table/tbody[2]/tr[5]'))
-        result.append(self.get_item('/html/body/div[5]/section/div[9]/table/tbody[2]/tr[19]'))
-
-        print('--- parsing balance page')
-        self.driver.get(urls[2])
-        result.append(self.get_item('/html/body/div[5]/section/div[9]/table/tbody[2]/tr[1]'))
-        result.append(self.get_item('/html/body/div[5]/section/div[9]/table/tbody[2]/tr[2]/td/div/table/tbody/tr[1]'))
-        result.append(self.get_item('/html/body/div[5]/section/div[9]/table/tbody[2]/tr[2]/td/div/table/tbody/tr[5]'))
-        result.append(self.get_item('/html/body/div[5]/section/div[9]/table/tbody[2]/tr[2]/td/div/table/tbody/tr[7]'))
-        result.append(self.get_item('/html/body/div[5]/section/div[9]/table/tbody[2]/tr[3]'))
-        result.append(self.get_item('/html/body/div[5]/section/div[9]/table/tbody[2]/tr[3]'))
-        result.append(self.get_item('/html/body/div[5]/section/div[9]/table/tbody[2]/tr[5]'))
-        result.append(self.get_item('/html/body/div[5]/section/div[9]/table/tbody[2]/tr[7]'))
-        result.append(self.get_item('/html/body/div[5]/section/div[9]/table/tbody[2]/tr[8]/td/div/table/tbody/tr[1]'))
-
-        print('--- parsing cash flow page')
-        self.driver.get(urls[3])
-        result.append(self.get_item('/html/body/div[5]/section/div[9]/table/tbody[2]/tr[2]'))
-        result.append(self.get_item('/html/body/div[5]/section/div[9]/table/tbody[2]/tr[2]'))
-        result.append(self.get_item('/html/body/div[5]/section/div[9]/table/tbody[2]/tr[4]'))
-        result.append(self.get_item('/html/body/div[5]/section/div[9]/table/tbody[2]/tr[6]'))
-
-        return result
-
-    def run(self) -> DataFrame:
+    def run(self) -> None:
         print('\n===== Investing.com Parser ======')
+        # Parse Ticker list from investing.com
+        print('Get Ticker List from investing.com')
         tickers = self.get_tickers()
-        print(f'Total number of tickers is {len(tickers)}')
-        
-        index = tickers.keys()
-        columns = ['Volume', 'Low Price', 'High Price',
+        # Save Ticker list to data/
+        print('Save Ticker List')
+        df = pd.DataFrame(data=tickers, columns=['Co.', 'URL'])
+        df = df.set_index(['Co.'])
+        df.to_csv('./data/ticker_list.csv')
+        # Read Ticker list from data/
+        # maybe this is not essential
+        print('Read Ticker List')
+        df = pd.read_csv('./data/ticker_list.csv', index_col=0)
+        print(f'Total number of tickers is {len(df.index)}')
+        # Parse ticker's fundamental from each investing.com page
+        print("Get each ticker's infomation.")
+        columns = ['Low Price', 'High Price', 'Outstanding', 
                   'Revenue', 'Cost of Revenue', 'Operating Expense',
                   'Net Income', 'Current Asset', 'Cash Investment',
                   'Receivables', 'Inventory', 'Asset', 'Fixed Asset',
                   'Current Liabilities', 'Liabilities', 'Long Term Debt']
         data = []
-        
-        print("Get each ticker's infomation.")
-        for ticker in index:
-            print(f"{ticker} page is parsed.")
-            urls = self.get_url(tickers[ticker])
-            data.append(self.get_info(urls))
-        df = DataFrame(data=data, index=index, columns=columns)
-
-        return df
+        for ticker in tqdm(df.index):
+            fundamental = self.get_fundamental(df.loc[ticker]['URL'])
+            data.append(fundamental)
+        df_fund = pd.DataFrame(data=data, columns=columns, index=df.index)
+        df_fund.to_csv('./data/fundamentals.csv')
+        return
         
 if __name__ == '__main__':
     p = Parser()
-    p.run().to_csv('../data/ticker_info.csv')
+    p.run()
