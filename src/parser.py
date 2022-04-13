@@ -9,18 +9,39 @@ from typing import Dict, List
 import pandas as pd
 from tqdm import tqdm
 
-class Parser:
+class EasyParse:
+    def __init__(self) -> None:
+        pass
+
+    def sum_items(self, elements) -> float:
+        sum = 0
+        for e in elements[1:]:
+            try:
+                sum += float(e.text)
+            except:
+                continue
+        return sum
+
+    def rm_percent(self, element) -> float:
+        value = element.text.split('%')[0]
+        try:
+            value = float(value)
+        except:
+            value = 0
+        return value
+
+class InvestingParser:
     def __init__(self) -> None:
         # Setting Webdriver option
         chrome_options = Options()
-        chrome_options.add_argument('--headless')
+        chrome_options.add_argument('--headless') 
         chrome_options.add_argument(f'--window-size=1920, 1080')
         # Load Chrome driver
         self.driver = webdriver.Chrome(
             service=Service(ChromeDriverManager().install()),
             options=chrome_options
             )
-        self.driver.implicitly_wait(10)
+        self.driver.implicitly_wait(30)
         self.driver.get('https://www.investing.com/equities/united-states')
 
     def get_tickers(self) -> Dict:
@@ -45,17 +66,54 @@ class Parser:
         fundamental = []
         # Overview Page
         self.driver.get(url)
-        dl = WebDriverWait(self.driver, 30).until(EC.presence_of_element_located((By.TAG_NAME, 'dl')))
+        dl = WebDriverWait(self.driver, 60).until(EC.presence_of_element_located((By.TAG_NAME, 'dl')))
         dds = dl.find_elements(
             by=By.TAG_NAME,
             value='dd'
         )
         low, high = dds[4].text.split('-')
-        fundamental.append(float(low)) # 52wk lowest price
-        fundamental.append(float(high)) # 52wk highest price
+        fundamental.append(float(low.replace(',', ''))) # 52wk lowest price
+        fundamental.append(float(high.replace(',', ''))) # 52wk highest price
         fundamental.append(int(dds[13].text.replace(',', ''))) # Outstanding
         # Financial Summary Page
         self.driver.get(url+'-financial-summary')
+        ep = EasyParse()
+        fundamental.append(ep.sum_items(self.driver.find_elements(
+            by=By.XPATH,
+            value='/html/body/div[5]/section/div[12]/div[1]/table/tbody/tr[1]'
+        ))) # Total Revenue
+        fundamental.append(ep.rm_percent(self.driver.find_element(
+            by=By.XPATH,
+            value='/html/body/div[5]/section/div[12]/div[1]/div[1]/div[3]/span[3]'
+        ))) # Net Profit Margin
+        fundamental.append(ep.sum_items(self.driver.find_elements(
+            by=By.XPATH,
+            value='/html/body/div[5]/section/div[12]/div[3]/table/tbody/tr[2]'
+        ))) # Total Liabilities
+        fundamental.append(ep.sum_items(self.driver.find_elements(
+            by=By.XPATH,
+            value='/html/body/div[5]/section/div[12]/div[3]/table/tbody/tr[3]'
+        ))) # Total Equity
+        fundamental.append(ep.rm_percent(self.driver.find_element(
+            by=By.XPATH,
+            value='/html/body/div[5]/section/div[12]/div[3]/div[1]/div[3]/span[3]'
+        ))) # LT Debt to Equity
+        fundamental.append(ep.rm_percent(self.driver.find_element(
+            by=By.XPATH,
+            value='/html/body/div[5]/section/div[12]/div[3]/div[1]/div[4]/span[3]'
+        ))) # Total Debt to Equity
+        fundamental.append(ep.sum_items(self.driver.find_elements(
+            by=By.XPATH,
+            value='/html/body/div[5]/section/div[12]/div[5]/table/tbody/tr[2]'
+        ))) # Cash From Investing Activities
+        fundamental.append(ep.sum_items(self.driver.find_elements(
+            by=By.XPATH,
+            value='/html/body/div[5]/section/div[12]/div[5]/table/tbody/tr[3]'
+        ))) # Cash From Financing Activities
+        fundamental.append(ep.sum_items(self.driver.find_elements(
+            by=By.XPATH,
+            value='/html/body/div[5]/section/div[12]/div[5]/table/tbody/tr[4]'
+        ))) # Net Change in Cash
         return fundamental
 
     def run(self) -> None:
@@ -76,10 +134,9 @@ class Parser:
         # Parse ticker's fundamental from each investing.com page
         print("Get each ticker's infomation.")
         columns = ['Low Price', 'High Price', 'Outstanding', 
-                  'Revenue', 'Cost of Revenue', 'Operating Expense',
-                  'Net Income', 'Current Asset', 'Cash Investment',
-                  'Receivables', 'Inventory', 'Asset', 'Fixed Asset',
-                  'Current Liabilities', 'Liabilities', 'Long Term Debt']
+                  'Total Revenue', 'Net Profit margin',
+                  'Total Liabilities', 'Total Equity', 'LT Debt to Equity', 'Total Debt to Equity',
+                  'Cash From Investing Activities', 'Cash From Financing Activities', 'Net Change in Cash']
         data = []
         for ticker in tqdm(df.index):
             fundamental = self.get_fundamental(df.loc[ticker]['URL'])
@@ -89,5 +146,5 @@ class Parser:
         return
         
 if __name__ == '__main__':
-    p = Parser()
+    p = InvestingParser()
     p.run()
