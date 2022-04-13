@@ -127,10 +127,3 @@ dmypy.json
 
 # Pyre type checker
 .pyre/
-
-# Testing folder
-test/
-
-# system folder
-.vscode/
-.DS_Store
