@@ -1,4 +1,4 @@
-from selenium import webdriver
+from seleniumwire import webdriver
 from selenium.webdriver.chrome.options import Options
 from selenium.webdriver.chrome.service import Service
 from selenium.webdriver.common.by import By
@@ -34,7 +34,7 @@ class InvestingParser:
     def __init__(self) -> None:
         # Setting Webdriver option
         chrome_options = Options()
-        chrome_options.add_argument('--headless') 
+        # chrome_options.add_argument('--headless') 
         chrome_options.add_argument(f'--window-size=1920, 1080')
         # Load Chrome driver
         self.driver = webdriver.Chrome(
