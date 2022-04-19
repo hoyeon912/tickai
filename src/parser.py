@@ -1,4 +1,3 @@
-# Selenium
 from selenium import webdriver
 from selenium.webdriver.chrome.options import Options
 from selenium.webdriver.chrome.service import Service
@@ -6,10 +5,9 @@ from selenium.webdriver.common.by import By
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.support.ui import WebDriverWait
 from webdriver_manager.chrome import ChromeDriverManager
-# Type Annotation
 from typing import Dict, List
-# Data Visulization
 import pandas as pd
+import time
 
 class EasyParse:
     def __init__(self) -> None:
@@ -36,8 +34,8 @@ class InvestingParser:
     def __init__(self) -> None:
         # Setting Chrome Driver
         self.chrome_options = Options()
-        self.chrome_options.add_argument('--headless') 
-        self.chrome_options.add_argument(f'--window-size=1920, 1080')
+        # self.chrome_options.add_argument('--headless') 
+        self.chrome_options.add_argument(f'--window-size=1920,1080')
         self.driver = webdriver.Chrome(
             service=Service(ChromeDriverManager().install()),
             options=self.chrome_options
@@ -66,15 +64,27 @@ class InvestingParser:
 
     def get_fundamental(self, url:str) -> List:
         # Setting Chrome Driver
-        self.driver.get(url)
+        self.driver.get(url) # TODO 이부분도 try-except로 감싸 둘 것
         # Overview Page
         fundamental = []
-        dl = WebDriverWait(self.driver, 60).until(EC.presence_of_element_located((By.TAG_NAME, 'dl')))
+        try:
+            dl = WebDriverWait(self.driver, 60).until(EC.presence_of_element_located((By.TAG_NAME, 'dl')))
+        except:
+            time.sleep(60)
+            self.driver.get(url)
+            dl = WebDriverWait(self.driver, 60).until(EC.presence_of_element_located((By.TAG_NAME, 'dl')))
         dds = dl.find_elements(
             by=By.TAG_NAME,
             value='dd'
         )
-        low, high = dds[4].text.split('-')
+        try:
+            low, high = dds[4].text.split('-')
+        except:
+            dds = dl.find_elements(
+                by=By.TAG_NAME,
+                value='dd'
+            )
+            low, high = dds[4].text.split('-')
         fundamental.append(float(low.replace(',', ''))) # 52wk lowest price
         fundamental.append(float(high.replace(',', ''))) # 52wk highest price
         fundamental.append(int(dds[13].text.replace(',', ''))) # Outstanding
@@ -82,10 +92,18 @@ class InvestingParser:
         self.driver.get(url+'-financial-summary')
         ep = EasyParse()
         # Total Revenue
-        fundamental.append(ep.sum_items(self.driver.find_elements(
-            by=By.XPATH,
-            value='/html/body/div[5]/section/div[12]/div[1]/table/tbody/tr[1]'
-        )))
+        try:
+            revenues = WebDriverWait(self.driver, 60).until(EC.presence_of_all_elements_located((By.XPATH, '/html/body/div[5]/section/div[12]/div[1]/table/tbody/tr[1]')))
+        except:
+            time.sleep(60)
+            self.driver.get(url+'-financial-summary')
+            revenues = WebDriverWait(self.driver, 60).until(EC.presence_of_all_elements_located((By.XPATH, '/html/body/div[5]/section/div[12]/div[1]/table/tbody/tr[1]')))
+        fundamental.append(ep.sum_items(revenues))
+        # # Total Revenue 
+        # fundamental.append(ep.sum_items(self.driver.find_elements(
+        #     by=By.XPATH,
+        #     value='/html/body/div[5]/section/div[12]/div[1]/table/tbody/tr[1]'
+        # )))
         # Net Profit Margin
         fundamental.append(ep.rm_percent(self.driver.find_element(
             by=By.XPATH,
@@ -137,7 +155,7 @@ class InvestingParser:
             tickers = self.get_tickers()
             # Save Ticker list to data/
             ticker_list = pd.DataFrame(data=tickers, columns=['Co.', 'URL'])
-            ticker_list = ticker.set_index(['Co.'])
+            ticker_list = ticker_list.set_index(['Co.'])
             ticker_list.to_csv('./data/ticker_list.csv')
         # Parse ticker's fundamental from each investing.com page
         columns = ['Low Price', 'High Price', 'Outstanding', 
@@ -148,6 +166,7 @@ class InvestingParser:
         for ticker in ticker_list.index:
             fundamental = self.get_fundamental(ticker_list.loc[ticker]['URL'])
             data.append(fundamental)
+        self.driver.quit()
         ticker_fund = pd.DataFrame(data=data, columns=columns, index=ticker_list.index)
         ticker_fund.to_csv('./data/fundamentals.csv')
         return
