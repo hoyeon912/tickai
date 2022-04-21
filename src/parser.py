@@ -8,6 +8,13 @@ from webdriver_manager.chrome import ChromeDriverManager
 from typing import Dict, List
 import pandas as pd
 import time
+import psutil
+
+def memory_usage(message: str = 'debug'):
+    p = psutil.Process()
+    rss = p.memory_info().rss / 2 ** 20
+    vms = p.memory_info().vms / 2 ** 20
+    print(f"[{message}] memory usage:\nRSS = {rss: 10.5f} MB\nVMS = {vms: 10.5f} MB")
 
 class EasyParse:
     def __init__(self) -> None:
@@ -59,12 +66,16 @@ class InvestingParser:
                 by=By.TAG_NAME, 
                 value='a'
             )
-            tickers.append([info.text, info.get_attribute('href')])
+            tickers.append([info.text, info.get_attribute('href').split('?')[0]])
         return tickers
 
     def get_fundamental(self, url:str) -> List:
         # Setting Chrome Driver
-        self.driver.get(url) # TODO 이부분도 try-except로 감싸 둘 것
+        try:
+            self.driver.get(url)
+        except:
+            time.sleep(60)
+            self.driver.get(url)
         # Overview Page
         fundamental = []
         try:
@@ -89,7 +100,11 @@ class InvestingParser:
         fundamental.append(float(high.replace(',', ''))) # 52wk highest price
         fundamental.append(int(dds[13].text.replace(',', ''))) # Outstanding
         # Financial Summary Page
-        self.driver.get(url+'-financial-summary')
+        try:
+            self.driver.get(url+'-financial-summary')
+        except:
+            time.sleep(60)
+            self.driver.get(url+'-financial-summary')
         ep = EasyParse()
         # Total Revenue
         try:
@@ -147,7 +162,8 @@ class InvestingParser:
         return fundamental
 
     def run(self) -> None:
-        try:
+        memory_usage('Start Program')
+        try: # TODO 이부분 변경 필요함. 무조건 except로 간다. 파일 체크 쪽으로 가야할 듯?
             # Read Ticker list from data/
             ticker_list = pd.read_csv('./data/ficker_list.csv', index_col=0)
         except:
@@ -156,7 +172,9 @@ class InvestingParser:
             # Save Ticker list to data/
             ticker_list = pd.DataFrame(data=tickers, columns=['Co.', 'URL'])
             ticker_list = ticker_list.set_index(['Co.'])
+            ticker_list.sort_index(inplace=True)
             ticker_list.to_csv('./data/ticker_list.csv')
+        memory_usage('After load ticker list')
         # Parse ticker's fundamental from each investing.com page
         columns = ['Low Price', 'High Price', 'Outstanding', 
                   'Total Revenue', 'Net Profit margin',
@@ -166,11 +184,13 @@ class InvestingParser:
         for ticker in ticker_list.index:
             fundamental = self.get_fundamental(ticker_list.loc[ticker]['URL'])
             data.append(fundamental)
+            memory_usage(f'After {ticker} parsing')
         self.driver.quit()
         ticker_fund = pd.DataFrame(data=data, columns=columns, index=ticker_list.index)
         ticker_fund.to_csv('./data/fundamentals.csv')
+        memory_usage('End Program')
         return
-        
+
 if __name__ == '__main__':
     p = InvestingParser()
     p.run()
