@@ -11,12 +11,13 @@ from dateutil.relativedelta import relativedelta
 from tqdm import tqdm
 import pandas as pd
 import time
+import pickle
 
 class Dict(dict):
     @property
     def length(self):
         if self:
-            return len(list(self.keys())[0])
+            return len(self[list(self.keys())[0]])
         else:
             return 0
 
@@ -24,12 +25,15 @@ class Dict(dict):
         return Dict(self)
 
     def concatenate(self, src):
-        dist = {}
+        dist = self.copy()
         keys = set(self.keys()) | set(src.keys())
         for key in keys:
-            if key in self.keys() and key in src.keys(): dist[key] = self[key] + [src[key]]
-            elif key in self.keys() and key not in src.keys(): dist[key] = self[key] + [0]
-            else: dist[key] = [0 for _ in range(self.length)] + [src[key]]
+            if key in self.keys() and key in src.keys(): 
+                dist[key] = dist[key] + [src[key]]
+            elif key in self.keys() and key not in src.keys(): 
+                dist[key] = dist[key] + [0]
+            else: 
+                dist[key] = [0 for _ in range(self.length)] + [src[key]]
         return Dict(dist)
 
 def _get_text(element):
@@ -89,10 +93,19 @@ def _put_summary(search_obj, period, dics):
     starts, ends = _get_period(period)
     for e in enumerate(zip(starts, ends)):
         i, (start, end) = e
-        df = search_obj.retrieve_historical_data(from_date=start, to_date=end)    
+        while True:
+            try:
+                df = search_obj.retrieve_historical_data(from_date=start, to_date=end)
+            except IndexError:
+                return i, True
+            except:
+                time.sleep(5)
+            else:
+                break
         dics[i]['High'] = df['High'].max()
         dics[i]['Low'] = df['Low'].min()
         dics[i]['avg Volume'] = df['Volume'].mean()
+    return i, False
 
 def _get(name, url, driver):
     pages = ['-income-statement', '-balance-sheet', '-cash-flow']
@@ -116,11 +129,8 @@ def _get(name, url, driver):
                 break
         _put_table(data, dics)
     search_obj = investpy.search_quotes(name, ['stocks'], ['united states'], n_results=1)
-    try:
-        _put_summary(search_obj, period, dics)
-    except:
-        return dics[:3]
-    return dics
+    i, err = _put_summary(search_obj, period, dics)
+    return dics[:i] if err else dics
 
 chrome_options = Options()
 # chrome_options.headless = True
@@ -133,7 +143,6 @@ driver = webdriver.Chrome(
     options=chrome_options
 )
 driver.implicitly_wait(30)
-
 stocks = pd.read_csv('./data/stocklist.csv', index_col=0)
 data = Dict({})
 for stock in tqdm(stocks.index):
@@ -141,6 +150,11 @@ for stock in tqdm(stocks.index):
     for dic in dics:
             data = data.concatenate(dic)
     time.sleep(5)
+with open('./data/data.pickle', 'wb') as f:
+    try:
+        pickle.dump(data, f, protocol=pickle.HIGHEST_PROTOCOL)
+    except Exception as ex:
+        print(f'Error during pickling: {ex}')
 df = pd.DataFrame.from_dict(data)
 df.to_csv('./data/fundamentals.csv')
 driver.quit()
