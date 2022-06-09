@@ -89,7 +89,7 @@ def _get_period(element):
 
 def _put_summary(search_obj, period, dics):
     starts, ends = _get_period(period)
-    for e in enumerate(zip(starts, ends)):
+    for e in enumerate(zip(starts, ends)): # Lastest to Oldest!
         i, (start, end) = e
         while True:
             try:
@@ -130,29 +130,28 @@ def _get(name, url, driver):
     i, err = _put_summary(search_obj, period, dics)
     return dics[:i] if err else dics
 
-chrome_options = Options()
-# chrome_options.headless = True
-chrome_options.add_argument('--disable-logging')
-chrome_options.add_argument('--disable-in-process-stack-traces')
-chrome_options.add_argument('--log-level=3')
-chrome_options.add_argument('--window-size=1920,1080')
-driver = webdriver.Chrome(
-    service=Service(ChromeDriverManager().install()),
-    options=chrome_options
-)
-driver.implicitly_wait(30)
-stocks = pd.read_csv('./data/stocklist.csv', index_col=0)
-data = Dict({})
-for stock in tqdm(stocks.index):
-    dics = _get(stock, stocks.loc[stock]['URL'], driver)
-    for dic in dics:
-            data = data.concatenate(dic)
-    time.sleep(5)
-with open('./data/data.pickle', 'wb') as f:
-    try:
-        pickle.dump(data, f, protocol=pickle.HIGHEST_PROTOCOL)
-    except Exception as ex:
-        print(f'Error during pickling: {ex}')
-df = pd.DataFrame.from_dict(data)
-df.to_csv('./data/fundamentals.csv')
-driver.quit()
+def get(driver):
+    stocks = pd.read_csv('./data/stocklist.csv', index_col=0)
+    train_ds = Dict({})
+    test_ds = Dict({})
+    for stock in tqdm(stocks.index):
+        dics = _get(stock, stocks.loc[stock]['URL'], driver)
+        test_ds = test_ds.concatenate(dics[0])
+        for dic in dics[1:]:
+                train_ds = train_ds.concatenate(dic)
+        time.sleep(5)
+    # TODO : Change to abstract address
+    with open('./data/train_ds.pickle', 'wb') as f:
+        try:
+            pickle.dump(train_ds, f, protocol=pickle.HIGHEST_PROTOCOL)
+        except Exception as ex:
+            print(f'Error during pickling: {ex}')
+    with open('./data/test_ds.pickle', 'wb') as f:
+        try:
+            pickle.dump(train_ds, f, protocol=pickle.HIGHEST_PROTOCOL)
+        except Exception as ex:
+            print(f'Error during pickling: {ex}')
+    train_df = pd.DataFrame.from_dict(train_ds)
+    train_df.to_csv('./data/train_ds.csv')
+    test_df = pd.DataFrame.from_dict(test_ds)
+    test_df.to_csv('./data/test_ds.csv')
