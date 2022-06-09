@@ -10,6 +10,7 @@ from tqdm import tqdm
 import pandas as pd
 import time
 import pickle
+import sys
 
 class Dict(dict):
     @property
@@ -50,7 +51,7 @@ def _get_value(text):
     except:
         return 0
 
-def _put_table(element, dics):
+def _put_table(element, dics, type='train'):
     trs = element.find_elements(
         by=By.TAG_NAME,
         value='tr'
@@ -67,19 +68,31 @@ def _put_table(element, dics):
         )
         data = list(map(_get_text, tds))
         key = data[0]
-        for e in enumerate(list(map(_get_value, data[1:]))):
+        if type == 'test':
+            values = data[1]
+        elif type == 'train':
+            values = data[2:]
+        else:
+            print("Value Error: type argument has only 'train' or 'test'.")
+        for e in enumerate(list(map(_get_value, values))):
             i, value = e
             dics[i][key] = value
     return dics
 
-def _get_period(element):
+def _get_period(element, type='train'):
     ths = element.find_elements(
         by=By.TAG_NAME,
         value='th'
     )
+    if type == 'test':
+        values = ths[1]
+    elif type == 'train':
+        values = ths[2:5]
+    else:
+        print("Value Error: type argument has only 'train' or 'test'.")
     starts = []
     ends = []
-    for date in list(map(_get_date, map(_get_text, ths[1:5]))):
+    for date in list(map(_get_date, map(_get_text, values))):
         end = datetime.strptime(date, '%d/%m/%Y')
         start = end - relativedelta(years=1) 
         start += relativedelta(days=7-start.weekday())
@@ -105,7 +118,7 @@ def _put_summary(search_obj, period, dics):
         dics[i]['avg Volume'] = df['Volume'].mean()
     return i, False
 
-def _get(name, url, driver):
+def _get(name, url, driver, type):
     pages = ['-income-statement', '-balance-sheet', '-cash-flow']
     dics = [Dict() for _ in range(4)]
     for page in pages:
@@ -125,34 +138,38 @@ def _get(name, url, driver):
                 driver.refresh()
             else:
                 break
-        _put_table(data, dics)
+        _put_table(data, dics, type)
     search_obj = investpy.search_quotes(name, ['stocks'], ['united states'], n_results=1)
-    i, err = _put_summary(search_obj, period, dics)
+    i, err = _put_summary(search_obj, period, dics, type)
     return dics[:i] if err else dics
 
-chrome_options = Options()
-# chrome_options.headless = True
-chrome_options.add_argument('--disable-logging')
-chrome_options.add_argument('--disable-in-process-stack-traces')
-chrome_options.add_argument('--log-level=3')
-chrome_options.add_argument('--window-size=1920,1080')
-driver = webdriver.Chrome(
-    service=Service(ChromeDriverManager().install()),
-    options=chrome_options
-)
-driver.implicitly_wait(30)
-stocks = pd.read_csv('./data/stocklist.csv', index_col=0)
-data = Dict({})
-for stock in tqdm(stocks.index):
-    dics = _get(stock, stocks.loc[stock]['URL'], driver)
-    for dic in dics:
-            data = data.concatenate(dic)
-    time.sleep(5)
-with open('./data/data.pickle', 'wb') as f:
-    try:
-        pickle.dump(data, f, protocol=pickle.HIGHEST_PROTOCOL)
-    except Exception as ex:
-        print(f'Error during pickling: {ex}')
-df = pd.DataFrame.from_dict(data)
-df.to_csv('./data/fundamentals.csv')
-driver.quit()
+
+if __name__ == '__main__':
+    type = sys.argv[1]
+    name = sys.argv[2]
+    chrome_options = Options()
+    # chrome_options.headless = True
+    chrome_options.add_argument('--disable-logging')
+    chrome_options.add_argument('--disable-in-process-stack-traces')
+    chrome_options.add_argument('--log-level=3')
+    chrome_options.add_argument('--window-size=1920,1080')
+    driver = webdriver.Chrome(
+        service=Service(ChromeDriverManager().install()),
+        options=chrome_options
+    )
+    driver.implicitly_wait(30)
+    stocks = pd.read_csv('./data/stocklist.csv', index_col=0)
+    data = Dict({})
+    for stock in tqdm(stocks.index):
+        dics = _get(stock, stocks.loc[stock]['URL'], driver, type)
+        for dic in dics:
+                data = data.concatenate(dic)
+        time.sleep(5)
+    with open(f'./data/{name}.pickle', 'wb') as f:
+        try:
+            pickle.dump(data, f, protocol=pickle.HIGHEST_PROTOCOL)
+        except Exception as ex:
+            print(f'Error during pickling: {ex}')
+    df = pd.DataFrame.from_dict(data)
+    df.to_csv(f'./data/{name}.csv')
+    driver.quit()
