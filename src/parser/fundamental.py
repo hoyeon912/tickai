@@ -160,10 +160,12 @@ if __name__ == '__main__':
     test_data = Dict({})
     for stock in tqdm(stocks.index):
         dics = _get(stock, stocks.loc[stock]['URL'], driver)
-        test_data = train_data.concatenate(dics[0])
+        dics[0]['name'] = stock
+        test_data = test_data.concatenate(dics[0])
         for dic in dics[1:]:
                 train_data = train_data.concatenate(dic)
         time.sleep(5)
     save_data('train', train_data)
     save_data('test', test_data)
     driver.quit()
+    print("Done!")
